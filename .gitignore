@@ -1,0 +1,20 @@
+# старые сборки (актуальная - xl2tab_v10.dll)
+xl2tab.dll
+xl2tab_v2.dll
+xl2tab_v3.dll
+xl2tab_v4.dll
+xl2tab_v5.dll
+xl2tab_v6.dll
+xl2tab_v7.dll
+xl2tab_v8.dll
+xl2tab_v9.dll
+
+# исторические LISP-наброски (нерабочие, справочно)
+legacy-lsp/
+
+# мусор сборки и системы
+*.pdb
+*.suo
+bin/
+obj/
+Thumbs.db
