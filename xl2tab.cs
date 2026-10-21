@@ -1136,7 +1136,7 @@ namespace Xl2Tab
         {
             try
             {
-                object btn = Call(tb, "AddToolbarButton", new object[] { idx, 0, name, help, macro, false });
+                object btn = Call(tb, "AddToolbarButton", new object[] { idx, name, help, macro, false });
                 try
                 {
                     string bmp16 = EnsureIcon(16, "X2T", "xl2tab16.bmp");
