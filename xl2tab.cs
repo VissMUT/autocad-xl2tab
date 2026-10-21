@@ -22,8 +22,8 @@ using Autodesk.AutoCAD.Windows;
 [assembly: System.Reflection.AssemblyTitle("XL2TAB")]
 [assembly: System.Reflection.AssemblyProduct("XL2TAB")]
 [assembly: System.Reflection.AssemblyCopyright("VissMUT")]
-[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.0.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.1.0")]
 
 namespace Xl2Tab
 {
