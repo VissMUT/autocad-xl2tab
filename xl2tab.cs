@@ -2,17 +2,20 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
 using System.Text;
+using System.Windows.Forms;
 using System.Xml;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using Autodesk.AutoCAD.Windows;
 
 [assembly: CommandClass(typeof(Xl2Tab.Plugin))]
 
@@ -432,10 +435,11 @@ namespace Xl2Tab
             }
         }
 
-        class SheetInfo
+        public class SheetInfo
         {
             public int Index;
             public string Name;
+            public override string ToString() { return Name; }
         }
 
         static void LogTable(Table t, string tag)
@@ -615,7 +619,7 @@ namespace Xl2Tab
                     }
                     catch (System.Exception eE) { Log("TE: ОШИБКА: " + eE.Message); }
 
-                    Log("ВЕРДИКТ: рабочий формат - 'путь!Лист!A1:N40', адаптер AcExcel," +
+                    Log("ВЕРДИКТ: рабочий формат - 'путь!Лист!A1:N40', адаптер ACEXCEL," +
                         " имя листа БЕЗ кавычек. Кириллица и пробелы в имени листа - OK.");
                     Log("Современный формат 'ACEXCEL;DataSource=...' через API НЕ работает (eDataLinkSourceNotFound).");
 
@@ -629,9 +633,180 @@ namespace Xl2Tab
             }
         }
 
-        // ───────────────────────────────────────────────────────────
-        [CommandMethod("XL2TAB")]
-        public void Run()
+        // ── ядро: создание таблиц по настройкам ─────────────────────
+        static int CreateTables(Database db, Editor ed, string path, List<SheetInfo> picked,
+                                Dictionary<int, XlsxSheet> xlsx, object wsc,
+                                string rngIn, double scale, bool split,
+                                double maxH1, double maxH2, Point3d pt)
+        {
+            const double gap = 15.0;
+            int ok = 0;
+            Stopwatch swAll = Stopwatch.StartNew();
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                DataLinkManager dlm = db.DataLinkManager;
+                BlockTableRecord btr = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForWrite);
+
+                foreach (SheetInfo si in picked)
+                {
+                    XlsxSheet sh = null;
+                    object ws = null;
+                    if (xlsx != null) sh = xlsx[si.Index];
+                    else ws = GetPI(wsc, "Item", new object[] { si.Index });
+
+                    // границы диапазона
+                    int c1 = 1, r1 = 1, c2 = 1, r2 = 1, rows = 1, cols = 1;
+                    if (rngIn != "")
+                    {
+                        if (!ParseRange(rngIn, out c1, out r1, out c2, out r2))
+                        {
+                            ed.WriteMessage("\n  ПРОПУСК листа \"" + si.Name +
+                                            "\": неверный диапазон \"" + rngIn + "\"");
+                            continue;
+                        }
+                        rows = r2 - r1 + 1;
+                        cols = c2 - c1 + 1;
+                    }
+                    else if (xlsx != null)
+                    {
+                        c1 = sh.C1; r1 = sh.R1; c2 = sh.C2; r2 = sh.R2;
+                        rows = r2 - r1 + 1;
+                        cols = c2 - c1 + 1;
+                    }
+                    else
+                    {
+                        object ur = GetP(ws, "UsedRange");
+                        if (ur != null)
+                        {
+                            rows = (int)GetP(GetP(ur, "Rows"), "Count");
+                            cols = (int)GetP(GetP(ur, "Columns"), "Count");
+                            try { r1 = (int)GetP(ur, "Row"); } catch { }
+                            try { c1 = (int)GetP(ur, "Column"); } catch { }
+                        }
+                        c2 = c1 + cols - 1;
+                        r2 = r1 + rows - 1;
+                    }
+
+                    if (split && rows > 1)
+                    {
+                        double totalW = 0;
+                        for (int c = c1; c <= c2; c++)
+                            totalW += (xlsx != null) ? ColWmmZip(sh, c, scale) : ColWmm(ws, c, scale);
+                        if (totalW > 390.0)
+                            ed.WriteMessage("\n  ВНИМАНИЕ: лист \"" + si.Name + "\" - ширина " +
+                                            totalW.ToString("0") + " мм > 390 (не влезет в А3 альбомную)");
+                    }
+
+                    if (!split || rows <= 1)
+                    {
+                        // без разбивки (одна таблица на весь диапазон)
+                        string rangeStr = ColLetter(c1) + r1 + ":" + ColLetter(c2) + r2;
+                        string linkName = "XL2TAB_" + si.Index + "_" + si.Name;
+                        ObjectId oldId = dlm.GetDataLink(linkName);
+                        if (oldId != ObjectId.Null) dlm.RemoveDataLink(oldId);
+
+                        Stopwatch swL = Stopwatch.StartNew();
+                        ObjectId dlId = CreateDataLinkLegacy(db, tr, linkName, path, si.Name, rangeStr);
+                        Table t = AddTable(db, tr, btr, dlId, pt, rows, cols);
+                        UpdateLink(tr, dlId);
+                        swL.Stop();
+
+                        string probe = null;
+                        try { probe = t.GetTextString(0, 0, 0); } catch { }
+                        if (probe == null || probe == "")
+                            Log("  ВНИМАНИЕ: лист \"" + si.Name +
+                                "\" дал пустую таблицу - запустите XLTABDIAG2 для диагностики");
+
+                        Stopwatch swS = Stopwatch.StartNew();
+                        t.SuppressRegenerateTable(true);
+                        for (int c = 0; c < cols; c++)
+                            t.SetColumnWidth(c, (xlsx != null) ? ColWmmZip(sh, c1 + c, scale) : ColWmm(ws, c1 + c, scale));
+                        for (int r = 0; r < rows; r++)
+                            t.SetRowHeight(r, (xlsx != null) ? RowHmmZip(sh, r1 + r, scale) : RowHmm(ws, r1 + r, scale));
+                        t.SuppressRegenerateTable(false);
+                        swS.Stop();
+                        Log("  [" + si.Name + "] связь+обновление " + swL.ElapsedMilliseconds +
+                            " мс, размеры " + swS.ElapsedMilliseconds + " мс");
+
+                        pt = new Point3d(pt.X, pt.Y - t.Height - gap, pt.Z);
+                        ok++;
+                        ed.WriteMessage("\n  OK: лист \"" + si.Name + "\" - связь \"" + linkName + "\"");
+                    }
+                    else
+                    {
+                        // разбивка по высоте: шапка = первая строка диапазона отдельной связью,
+                        // форматирование шапки приходит из Excel (не копируется текстом)
+                        string hdrRange = ColLetter(c1) + r1 + ":" + ColLetter(c2) + r1;
+                        string hdrLinkName = "XL2TAB_" + si.Index + "_" + si.Name + "_ШАПКА";
+                        ObjectId hdrOld = dlm.GetDataLink(hdrLinkName);
+                        if (hdrOld != ObjectId.Null) dlm.RemoveDataLink(hdrOld);
+                        ObjectId hdrId = CreateDataLinkLegacy(db, tr, hdrLinkName, path, si.Name, hdrRange);
+
+                        double headerH = (xlsx != null) ? RowHmmZip(sh, r1, scale) : RowHmm(ws, r1, scale);
+                        int dataStart = r1 + 1;
+                        int chunkNo = 1;
+                        int cur = dataStart;
+                        while (cur <= r2)
+                        {
+                            double limit = (chunkNo == 1) ? maxH1 : maxH2;
+                            int chunkStart = cur;
+                            double sum = headerH;
+                            sum += (xlsx != null) ? RowHmmZip(sh, cur, scale) : RowHmm(ws, cur, scale);
+                            cur++;
+                            while (cur <= r2 &&
+                                   sum + ((xlsx != null) ? RowHmmZip(sh, cur, scale) : RowHmm(ws, cur, scale)) <= limit)
+                            {
+                                sum += (xlsx != null) ? RowHmmZip(sh, cur, scale) : RowHmm(ws, cur, scale);
+                                cur++;
+                            }
+                            int chunkRows = cur - chunkStart;
+
+                            string chunkRange = ColLetter(c1) + chunkStart + ":" + ColLetter(c2) + (cur - 1);
+                            string linkName = "XL2TAB_" + si.Index + "_" + si.Name + "_Ч" + chunkNo;
+                            ObjectId oldId = dlm.GetDataLink(linkName);
+                            if (oldId != ObjectId.Null) dlm.RemoveDataLink(oldId);
+                            ObjectId dataId = CreateDataLinkLegacy(db, tr, linkName, path, si.Name, chunkRange);
+
+                            Stopwatch swL = Stopwatch.StartNew();
+                            Table t = AddTable2Links(db, tr, btr, hdrId, dataId, pt, chunkRows + 1, cols);
+                            UpdateLink(tr, hdrId);
+                            UpdateLink(tr, dataId);
+                            swL.Stop();
+
+                            Stopwatch swS = Stopwatch.StartNew();
+                            t.SuppressRegenerateTable(true);
+                            t.SetRowHeight(0, headerH);
+                            for (int c = 0; c < cols; c++)
+                                t.SetColumnWidth(c, (xlsx != null) ? ColWmmZip(sh, c1 + c, scale) : ColWmm(ws, c1 + c, scale));
+                            for (int j = 0; j < chunkRows; j++)
+                                t.SetRowHeight(1 + j, (xlsx != null) ? RowHmmZip(sh, chunkStart + j, scale)
+                                                                     : RowHmm(ws, chunkStart + j, scale));
+                            t.SuppressRegenerateTable(false);
+                            swS.Stop();
+                            Log("  [" + si.Name + " ч." + chunkNo + "] связи+обновление " +
+                                swL.ElapsedMilliseconds + " мс, размеры " + swS.ElapsedMilliseconds + " мс");
+
+                            pt = new Point3d(pt.X, pt.Y - t.Height - gap, pt.Z);
+                            ok++;
+                            ed.WriteMessage("\n  OK: лист \"" + si.Name + "\" ч." + chunkNo +
+                                            " (строки " + chunkStart + "-" + (cur - 1) +
+                                            ") - связь \"" + linkName + "\"");
+                            chunkNo++;
+                        }
+                    }
+                }
+                tr.Commit();
+            }
+
+            swAll.Stop();
+            Log("XL2TAB v11: ВСЕГО " + swAll.ElapsedMilliseconds + " мс (таблиц: " + ok + ")");
+            return ok;
+        }
+
+        // ── пошаговый режим (запасной) ──────────────────────────────
+        [CommandMethod("XL2TABPROMPT")]
+        public void PromptRun()
         {
             Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
             if (doc == null) return;
@@ -655,7 +830,6 @@ namespace Xl2Tab
             object wsc = null;
             int[] excelPidsBefore = null;
             Dictionary<int, XlsxSheet> xlsx = null;
-            Stopwatch swAll = Stopwatch.StartNew();
             try
             {
                 if (path.ToLowerInvariant().EndsWith(".xlsx"))
@@ -665,13 +839,13 @@ namespace Xl2Tab
                     {
                         xlsx = ReadXlsx(path);
                         swZip.Stop();
-                        Log("XL2TAB v8: ZIP-чтение " + swZip.ElapsedMilliseconds +
+                        Log("XL2TAB v11: ZIP-чтение " + swZip.ElapsedMilliseconds +
                             " мс (листов: " + xlsx.Count + ")");
                     }
                     catch (System.Exception ez)
                     {
                         swZip.Stop();
-                        Log("XL2TAB v8: ZIP-чтение не удалось за " + swZip.ElapsedMilliseconds +
+                        Log("XL2TAB v11: ZIP-чтение не удалось за " + swZip.ElapsedMilliseconds +
                             " мс (" + ez.Message + ") - переключаюсь на Excel COM");
                         xlsx = null;
                     }
@@ -690,7 +864,7 @@ namespace Xl2Tab
                                                                 Miss, Miss, Miss, Miss, Miss, Miss, Miss, Miss });
                     wsc = GetP(wb, "Worksheets");
                     swCom.Stop();
-                    Log("XL2TAB v8: Excel COM-открытие " + swCom.ElapsedMilliseconds + " мс");
+                    Log("XL2TAB v11: Excel COM-открытие " + swCom.ElapsedMilliseconds + " мс");
                 }
 
                 List<SheetInfo> sheets = new List<SheetInfo>();
@@ -782,170 +956,10 @@ namespace Xl2Tab
                 PromptPointResult ppr = ed.GetPoint(ppo);
                 if (ppr.Status == PromptStatus.OK) pt = ppr.Value;
 
-                const double gap = 15.0;
-                int ok = 0;
-
-                using (Transaction tr = db.TransactionManager.StartTransaction())
-                {
-                    DataLinkManager dlm = db.DataLinkManager;
-                    BlockTableRecord btr = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForWrite);
-
-                    foreach (SheetInfo si in picked)
-                    {
-                        XlsxSheet sh = null;
-                        object ws = null;
-                        if (xlsx != null) sh = xlsx[si.Index];
-                        else ws = GetPI(wsc, "Item", new object[] { si.Index });
-
-                        // границы диапазона
-                        int c1 = 1, r1 = 1, c2 = 1, r2 = 1, rows = 1, cols = 1;
-                        if (rngIn != "")
-                        {
-                            if (!ParseRange(rngIn, out c1, out r1, out c2, out r2))
-                            {
-                                ed.WriteMessage("\n  ПРОПУСК листа \"" + si.Name +
-                                                "\": неверный диапазон \"" + rngIn + "\"");
-                                continue;
-                            }
-                            rows = r2 - r1 + 1;
-                            cols = c2 - c1 + 1;
-                        }
-                        else if (xlsx != null)
-                        {
-                            c1 = sh.C1; r1 = sh.R1; c2 = sh.C2; r2 = sh.R2;
-                            rows = r2 - r1 + 1;
-                            cols = c2 - c1 + 1;
-                        }
-                        else
-                        {
-                            object ur = GetP(ws, "UsedRange");
-                            if (ur != null)
-                            {
-                                rows = (int)GetP(GetP(ur, "Rows"), "Count");
-                                cols = (int)GetP(GetP(ur, "Columns"), "Count");
-                                try { r1 = (int)GetP(ur, "Row"); } catch { }
-                                try { c1 = (int)GetP(ur, "Column"); } catch { }
-                            }
-                            c2 = c1 + cols - 1;
-                            r2 = r1 + rows - 1;
-                        }
-
-                        if (split && rows > 1)
-                        {
-                            double totalW = 0;
-                            for (int c = c1; c <= c2; c++)
-                                totalW += (xlsx != null) ? ColWmmZip(sh, c, scale) : ColWmm(ws, c, scale);
-                            if (totalW > 390.0)
-                                ed.WriteMessage("\n  ВНИМАНИЕ: лист \"" + si.Name + "\" - ширина " +
-                                                totalW.ToString("0") + " мм > 390 (не влезет в А3 альбомную)");
-                        }
-
-                        if (!split || rows <= 1)
-                        {
-                            // ── без разбивки (одна таблица на весь диапазон) ──
-                            string rangeStr = ColLetter(c1) + r1 + ":" + ColLetter(c2) + r2;
-                            string linkName = "XL2TAB_" + si.Index + "_" + si.Name;
-                            ObjectId oldId = dlm.GetDataLink(linkName);
-                            if (oldId != ObjectId.Null) dlm.RemoveDataLink(oldId);
-
-                            Stopwatch swL = Stopwatch.StartNew();
-                            ObjectId dlId = CreateDataLinkLegacy(db, tr, linkName, path, si.Name, rangeStr);
-                            Table t = AddTable(db, tr, btr, dlId, pt, rows, cols);
-                            UpdateLink(tr, dlId);
-                            swL.Stop();
-
-                            string probe = null;
-                            try { probe = t.GetTextString(0, 0, 0); } catch { }
-                            if (probe == null || probe == "")
-                                Log("  ВНИМАНИЕ: лист \"" + si.Name +
-                                    "\" дал пустую таблицу - запустите XLTABDIAG2 для диагностики");
-
-                            Stopwatch swS = Stopwatch.StartNew();
-                            t.SuppressRegenerateTable(true);
-                            for (int c = 0; c < cols; c++)
-                                t.SetColumnWidth(c, (xlsx != null) ? ColWmmZip(sh, c1 + c, scale) : ColWmm(ws, c1 + c, scale));
-                            for (int r = 0; r < rows; r++)
-                                t.SetRowHeight(r, (xlsx != null) ? RowHmmZip(sh, r1 + r, scale) : RowHmm(ws, r1 + r, scale));
-                            t.SuppressRegenerateTable(false);
-                            swS.Stop();
-                            Log("  [" + si.Name + "] связь+обновление " + swL.ElapsedMilliseconds +
-                                " мс, размеры " + swS.ElapsedMilliseconds + " мс");
-
-                            pt = new Point3d(pt.X, pt.Y - t.Height - gap, pt.Z);
-                            ok++;
-                            ed.WriteMessage("\n  OK: лист \"" + si.Name + "\" - связь \"" + linkName + "\"");
-                        }
-                        else
-                        {
-                            // ── разбивка по высоте ──
-                            // шапка = первая строка диапазона отдельной связью - 
-                            // форматирование приходит из Excel, а не копируется текстом
-                            string hdrRange = ColLetter(c1) + r1 + ":" + ColLetter(c2) + r1;
-                            string hdrLinkName = "XL2TAB_" + si.Index + "_" + si.Name + "_ШАПКА";
-                            ObjectId hdrOld = dlm.GetDataLink(hdrLinkName);
-                            if (hdrOld != ObjectId.Null) dlm.RemoveDataLink(hdrOld);
-                            ObjectId hdrId = CreateDataLinkLegacy(db, tr, hdrLinkName, path, si.Name, hdrRange);
-
-                            double headerH = (xlsx != null) ? RowHmmZip(sh, r1, scale) : RowHmm(ws, r1, scale);
-                            int dataStart = r1 + 1;
-                            int chunkNo = 1;
-                            int cur = dataStart;
-                            while (cur <= r2)
-                            {
-                                double limit = (chunkNo == 1) ? maxH1 : maxH2;
-                                int chunkStart = cur;
-                                double sum = headerH;
-                                sum += (xlsx != null) ? RowHmmZip(sh, cur, scale) : RowHmm(ws, cur, scale);
-                                cur++;
-                                while (cur <= r2 &&
-                                       sum + ((xlsx != null) ? RowHmmZip(sh, cur, scale) : RowHmm(ws, cur, scale)) <= limit)
-                                {
-                                    sum += (xlsx != null) ? RowHmmZip(sh, cur, scale) : RowHmm(ws, cur, scale);
-                                    cur++;
-                                }
-                                int chunkRows = cur - chunkStart;
-
-                                string chunkRange = ColLetter(c1) + chunkStart + ":" + ColLetter(c2) + (cur - 1);
-                                string linkName = "XL2TAB_" + si.Index + "_" + si.Name + "_Ч" + chunkNo;
-                                ObjectId oldId = dlm.GetDataLink(linkName);
-                                if (oldId != ObjectId.Null) dlm.RemoveDataLink(oldId);
-                                ObjectId dataId = CreateDataLinkLegacy(db, tr, linkName, path, si.Name, chunkRange);
-
-                                Stopwatch swL = Stopwatch.StartNew();
-                                Table t = AddTable2Links(db, tr, btr, hdrId, dataId, pt, chunkRows + 1, cols);
-                                UpdateLink(tr, hdrId);
-                                UpdateLink(tr, dataId);
-                                swL.Stop();
-
-                                Stopwatch swS = Stopwatch.StartNew();
-                                t.SuppressRegenerateTable(true);
-                                t.SetRowHeight(0, headerH);
-                                for (int c = 0; c < cols; c++)
-                                    t.SetColumnWidth(c, (xlsx != null) ? ColWmmZip(sh, c1 + c, scale) : ColWmm(ws, c1 + c, scale));
-                                for (int j = 0; j < chunkRows; j++)
-                                    t.SetRowHeight(1 + j, (xlsx != null) ? RowHmmZip(sh, chunkStart + j, scale)
-                                                                         : RowHmm(ws, chunkStart + j, scale));
-                                t.SuppressRegenerateTable(false);
-                                swS.Stop();
-                                Log("  [" + si.Name + " ч." + chunkNo + "] связи+обновление " +
-                                    swL.ElapsedMilliseconds + " мс, размеры " + swS.ElapsedMilliseconds + " мс");
-
-                                pt = new Point3d(pt.X, pt.Y - t.Height - gap, pt.Z);
-                                ok++;
-                                ed.WriteMessage("\n  OK: лист \"" + si.Name + "\" ч." + chunkNo +
-                                                " (строки " + chunkStart + "-" + (cur - 1) +
-                                                ") - связь \"" + linkName + "\"");
-                                chunkNo++;
-                            }
-                        }
-                    }
-                    tr.Commit();
-                }
+                int ok = CreateTables(db, ed, path, picked, xlsx, wsc, rngIn, scale, split, maxH1, maxH2, pt);
 
                 ed.WriteMessage("\nXL2TAB: создано таблиц: " + ok +
                                 ". Обновление данных: DATALINKUPDATE (связи ссылаются на исходный файл).");
-                swAll.Stop();
-                Log("XL2TAB v8: ВСЕГО " + swAll.ElapsedMilliseconds + " мс (таблиц: " + ok + ")");
             }
             catch (System.Exception ex)
             {
@@ -957,6 +971,308 @@ namespace Xl2Tab
                 try { if (app != null) Call(app, "Quit", new object[0]); } catch { }
                 if (excelPidsBefore != null) KillNewExcel(excelPidsBefore);
                 GC.Collect();
+            }
+        }
+
+        // ── палитра ─────────────────────────────────────────────────
+        internal static PaletteSet Palette;
+        internal static Xl2TabControl PaletteControl;
+
+        internal static void ShowPalette()
+        {
+            try
+            {
+                if (Palette == null)
+                {
+                    Palette = new PaletteSet("XL2TAB");
+                    Palette.Style = PaletteSetStyles.ShowAutoHideButton
+                                  | PaletteSetStyles.ShowCloseButton
+                                  | PaletteSetStyles.ShowPropertiesMenu;
+                    PaletteControl = new Xl2TabControl();
+                    Palette.Add("XL2TAB", PaletteControl);
+                    Palette.Size = new Size(340, 620);
+                    Palette.MinimumSize = new Size(300, 420);
+                }
+                Palette.Visible = true;
+            }
+            catch (System.Exception ex) { Log("Палитра: " + ex.Message); }
+        }
+
+        [CommandMethod("XL2TAB")]
+        public void ShowXl2TabPalette()
+        {
+            ShowPalette();
+        }
+
+        // вызывается из палитры через SendStringToExecute
+        [CommandMethod("XL2TABRUN")]
+        public void RunFromPalette()
+        {
+            Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+            if (doc == null) return;
+            Database db = doc.Database;
+            Editor ed = doc.Editor;
+
+            if (!Xl2TabControl.HasPending)
+            {
+                ed.WriteMessage("\nXL2TAB: сначала настройте параметры в палитре (команда XL2TAB).");
+                return;
+            }
+
+            string path = Xl2TabControl.PendingPath;
+            List<SheetInfo> picked = Xl2TabControl.PendingSheets;
+            string rngIn = Xl2TabControl.PendingRange ?? "";
+            double scale = Xl2TabControl.PendingScale;
+            bool split = Xl2TabControl.PendingSplit;
+            double maxH1 = Xl2TabControl.PendingH1;
+            double maxH2 = Xl2TabControl.PendingH2;
+
+            object app = null;
+            object wsc = null;
+            int[] excelPidsBefore = null;
+            Dictionary<int, XlsxSheet> xlsx = null;
+            try
+            {
+                Log("XL2TAB v11: файл: " + path);
+                if (path.ToLowerInvariant().EndsWith(".xlsx"))
+                {
+                    try { xlsx = ReadXlsx(path); }
+                    catch (System.Exception ez) { Log("ZIP-чтение: " + ez.Message); xlsx = null; }
+                }
+                if (xlsx == null)
+                {
+                    excelPidsBefore = GetExcelPids();
+                    app = NewExcel();
+                    SetP(app, "Visible", 0);
+                    SetP(app, "DisplayAlerts", false);
+                    try { SetP(app, "ScreenUpdating", false); } catch { }
+                    try { SetP(app, "Calculation", -4135); } catch { }
+                    object wbs = GetP(app, "Workbooks");
+                    object wb = Call(wbs, "Open", new object[] { path, Miss, true, Miss, Miss, Miss, Miss,
+                                                                Miss, Miss, Miss, Miss, Miss, Miss, Miss, Miss });
+                    wsc = GetP(wb, "Worksheets");
+                }
+
+                Point3d pt = new Point3d(0, 0, 0);
+                PromptPointOptions ppo = new PromptPointOptions("\nТочка вставки первой таблицы (верхний левый угол) <0,0>:");
+                ppo.AllowNone = true;
+                PromptPointResult ppr = ed.GetPoint(ppo);
+                if (ppr.Status == PromptStatus.OK) pt = ppr.Value;
+
+                int ok = CreateTables(db, ed, path, picked, xlsx, wsc, rngIn, scale, split, maxH1, maxH2, pt);
+                ed.WriteMessage("\nXL2TAB: создано таблиц: " + ok + ".");
+                if (PaletteControl != null) PaletteControl.SetStatus("Готово: таблиц " + ok + ".");
+            }
+            catch (System.Exception ex)
+            {
+                ed.WriteMessage("\nXL2TAB ОШИБКА: " + ex.Message);
+                Log("XL2TAB ОШИБКА: " + ex.Message);
+                if (PaletteControl != null) PaletteControl.SetStatus("Ошибка: " + ex.Message);
+            }
+            finally
+            {
+                try { if (app != null) Call(app, "Quit", new object[0]); } catch { }
+                if (excelPidsBefore != null) KillNewExcel(excelPidsBefore);
+                GC.Collect();
+            }
+            ShowPalette();
+        }
+
+        // ── панель палитры ──────────────────────────────────────────
+        public class Xl2TabControl : UserControl
+        {
+            public static bool HasPending;
+            public static string PendingPath;
+            public static List<SheetInfo> PendingSheets;
+            public static string PendingRange = "";
+            public static double PendingScale = 1.0;
+            public static bool PendingSplit;
+            public static double PendingH1 = 232.0;
+            public static double PendingH2 = 247.0;
+
+            string _path;
+            Dictionary<int, XlsxSheet> _xlsx;
+            List<SheetInfo> _sheets;
+
+            Label _lblFile, _lblStatus;
+            Button _btnFile, _btnAll, _btnNone, _btnCreate;
+            CheckedListBox _clb;
+            TextBox _txtRange;
+            NumericUpDown _nudScale, _nudH1, _nudH2;
+            CheckBox _chkSplit;
+
+            public Xl2TabControl()
+            {
+                Width = 330;
+                Height = 560;
+                Font = new System.Drawing.Font("Segoe UI", 9f);
+
+                _btnFile = new Button { Text = "Выбрать файл...", Left = 8, Top = 8, Width = 128, Height = 26 };
+                _lblFile = new Label { Text = "файл не выбран", Left = 144, Top = 13, Width = 172, AutoEllipsis = true };
+                Label lblSheets = new Label { Text = "Листы:", Left = 8, Top = 42, Width = 60 };
+                _clb = new CheckedListBox { Left = 8, Top = 60, Width = 306, Height = 176, CheckOnClick = true };
+                _btnAll = new Button { Text = "Все", Left = 8, Top = 242, Width = 70, Height = 24 };
+                _btnNone = new Button { Text = "Ничего", Left = 84, Top = 242, Width = 70, Height = 24 };
+                Label lblRange = new Label { Text = "Диапазон (пусто = весь лист):", Left = 8, Top = 274, Width = 250 };
+                _txtRange = new TextBox { Left = 8, Top = 292, Width = 306 };
+                Label lblScale = new Label { Text = "Масштаб размеров:", Left = 8, Top = 324, Width = 160 };
+                _nudScale = new NumericUpDown
+                {
+                    Left = 8, Top = 342, Width = 70, DecimalPlaces = 2,
+                    Minimum = 0.01M, Maximum = 100M, Value = 1M, Increment = 0.1M
+                };
+                _chkSplit = new CheckBox { Text = "Разбивать по высоте (под А3)", Left = 8, Top = 378, Width = 270, Height = 22 };
+                Label lblH1 = new Label { Text = "Высота, мм (1-й лист):", Left = 8, Top = 404, Width = 150 };
+                _nudH1 = new NumericUpDown
+                {
+                    Left = 8, Top = 422, Width = 78, DecimalPlaces = 1,
+                    Minimum = 10M, Maximum = 3000M, Value = 232M, Enabled = false
+                };
+                Label lblH2 = new Label { Text = "последующие:", Left = 96, Top = 404, Width = 120 };
+                _nudH2 = new NumericUpDown
+                {
+                    Left = 96, Top = 422, Width = 78, DecimalPlaces = 1,
+                    Minimum = 10M, Maximum = 3000M, Value = 247M, Enabled = false
+                };
+                _btnCreate = new Button { Text = "Создать таблицы", Left = 8, Top = 460, Width = 160, Height = 34 };
+                _lblStatus = new Label { Text = "", Left = 8, Top = 502, Width = 306, Height = 48 };
+
+                Controls.AddRange(new Control[] {
+                    _btnFile, _lblFile, lblSheets, _clb, _btnAll, _btnNone,
+                    lblRange, _txtRange, lblScale, _nudScale, _chkSplit,
+                    lblH1, _nudH1, lblH2, _nudH2, _btnCreate, _lblStatus
+                });
+
+                _btnFile.Click += (s, e) => PickFile();
+                _btnAll.Click += (s, e) => CheckAll(true);
+                _btnNone.Click += (s, e) => CheckAll(false);
+                _chkSplit.CheckedChanged += (s, e) => { _nudH1.Enabled = _nudH2.Enabled = _chkSplit.Checked; };
+                _btnCreate.Click += (s, e) => Create();
+            }
+
+            public void SetStatus(string text)
+            {
+                _lblStatus.Text = text;
+            }
+
+            void CheckAll(bool value)
+            {
+                for (int i = 0; i < _clb.Items.Count; i++)
+                    _clb.SetItemChecked(i, value);
+            }
+
+            void PickFile()
+            {
+                using (System.Windows.Forms.OpenFileDialog ofd = new System.Windows.Forms.OpenFileDialog())
+                {
+                    ofd.Title = "Выберите файл Excel";
+                    ofd.Filter = "Excel (*.xlsx;*.xls)|*.xlsx;*.xls|Все файлы (*.*)|*.*";
+                    if (ofd.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+                    LoadFile(ofd.FileName);
+                }
+            }
+
+            void LoadFile(string path)
+            {
+                try
+                {
+                    _xlsx = null;
+                    _sheets = null;
+                    List<SheetInfo> sheets = new List<SheetInfo>();
+
+                    if (path.ToLowerInvariant().EndsWith(".xlsx"))
+                    {
+                        try
+                        {
+                            _xlsx = ReadXlsx(path);
+                            foreach (KeyValuePair<int, XlsxSheet> kv in _xlsx)
+                                if (!kv.Value.Hidden)
+                                    sheets.Add(new SheetInfo { Index = kv.Key, Name = kv.Value.Name });
+                        }
+                        catch (System.Exception ez)
+                        {
+                            _xlsx = null;
+                            SetStatus("ZIP не прочитан: " + ez.Message);
+                        }
+                    }
+
+                    if (_xlsx == null)
+                    {
+                        // Excel COM (для .xls или если ZIP не прочитался)
+                        int[] pids = GetExcelPids();
+                        object app = null;
+                        try
+                        {
+                            app = NewExcel();
+                            SetP(app, "Visible", 0);
+                            SetP(app, "DisplayAlerts", false);
+                            object wbs = GetP(app, "Workbooks");
+                            object wb = Call(wbs, "Open", new object[] { path, Miss, true, Miss, Miss, Miss, Miss,
+                                                                        Miss, Miss, Miss, Miss, Miss, Miss, Miss, Miss });
+                            object wsc = GetP(wb, "Worksheets");
+                            int cnt = (int)GetP(wsc, "Count");
+                            for (int i = 1; i <= cnt; i++)
+                            {
+                                object ws = GetPI(wsc, "Item", new object[] { i });
+                                int vis = (int)GetP(ws, "Visible");
+                                if (vis == -1) sheets.Add(new SheetInfo { Index = i, Name = (string)GetP(ws, "Name") });
+                            }
+                        }
+                        finally
+                        {
+                            try { if (app != null) Call(app, "Quit", new object[0]); } catch { }
+                            KillNewExcel(pids);
+                        }
+                    }
+
+                    _sheets = sheets;
+                    _path = path;
+                    _lblFile.Text = Path.GetFileName(path);
+                    _clb.Items.Clear();
+                    foreach (SheetInfo si in sheets) _clb.Items.Add(si, true);
+                    SetStatus("Листов: " + sheets.Count + ". Отметьте нужные и нажмите «Создать».");
+                }
+                catch (System.Exception ex)
+                {
+                    SetStatus("Ошибка чтения файла: " + ex.Message);
+                }
+            }
+
+            void Create()
+            {
+                if (_path == null || _sheets == null || _sheets.Count == 0)
+                {
+                    SetStatus("Сначала выберите файл Excel.");
+                    return;
+                }
+                List<SheetInfo> picked = new List<SheetInfo>();
+                for (int i = 0; i < _clb.Items.Count; i++)
+                    if (_clb.GetItemChecked(i)) picked.Add((SheetInfo)_clb.Items[i]);
+                if (picked.Count == 0)
+                {
+                    SetStatus("Отметьте хотя бы один лист.");
+                    return;
+                }
+
+                PendingPath = _path;
+                PendingSheets = picked;
+                PendingRange = (_txtRange.Text ?? "").Trim();
+                PendingScale = (double)_nudScale.Value;
+                PendingSplit = _chkSplit.Checked;
+                PendingH1 = (double)_nudH1.Value;
+                PendingH2 = (double)_nudH2.Value;
+                HasPending = true;
+
+                Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                if (doc == null)
+                {
+                    SetStatus("Нет активного чертежа.");
+                    return;
+                }
+
+                if (Palette != null) Palette.Visible = false;
+                SetStatus("Выберите точку вставки в чертеже...");
+                doc.SendStringToExecute("XL2TABRUN\n", true, false, false);
             }
         }
     }

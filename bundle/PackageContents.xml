@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0" Version="1.0.0.0"
+                    ProductCode="{8E1B5F3A-2C4D-4A9E-9B7F-6D3C1A2E5F40}"
+                    Name="XL2TAB"
+                    Description="Excel в связанные таблицы AutoCAD (DataLink)"
+                    Author="VissMUT">
+  <CompanyDetails Name="VissMUT" />
+  <Components>
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R23.0" />
+    <ComponentEntry AppName="XL2TAB" Version="1.0.0.0"
+                    ModuleName="./Contents/xl2tab.dll"
+                    AppDescription="XL2TAB - Excel в связанные таблицы AutoCAD (DataLink)">
+      <Commands GroupName="XL2TAB">
+        <Command Global="XL2TAB" />
+        <Command Global="XL2TABRUN" />
+        <Command Global="XL2TABPROMPT" />
+        <Command Global="XLTABDIAG2" />
+      </Commands>
+    </ComponentEntry>
+  </Components>
+</ApplicationPackage>

@@ -1,4 +1,4 @@
-# Сборка xl2tab.dll из исходника.
+﻿# Сборка xl2tab.dll из исходника.
 # Требует csc.exe (.NET Framework) и установленный AutoCAD 2019+.
 # Если DLL уже загружена в AutoCAD - закройте AutoCAD или смените -out:.
 
@@ -17,8 +17,11 @@ $out = Join-Path $PSScriptRoot "xl2tab.dll"
     /r:"$acadDir\AcCoreMgd.dll" `
     /r:"$acadDir\acdbmgd.dll" `
     /r:"$acadDir\acmgd.dll" `
-    /r:System.Windows.Forms.dll /r:System.dll `
+    /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.dll `
     /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Xml.dll `
+    /r:"$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\WPF\PresentationCore.dll" `
+    /r:"$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\WPF\PresentationFramework.dll" `
+    /r:"$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\WPF\WindowsBase.dll" `
     (Join-Path $PSScriptRoot "xl2tab.cs")
 
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
