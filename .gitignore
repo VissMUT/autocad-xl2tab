@@ -1,26 +1,5 @@
-# старые сборки (актуальная - xl2tab_v23.dll)
-xl2tab.dll
-xl2tab_v2.dll
-xl2tab_v3.dll
-xl2tab_v4.dll
-xl2tab_v5.dll
-xl2tab_v6.dll
-xl2tab_v7.dll
-xl2tab_v8.dll
-xl2tab_v9.dll
-xl2tab_v10.dll
-xl2tab_v11.dll
-xl2tab_v12.dll
-xl2tab_v13.dll
-xl2tab_v14.dll
-xl2tab_v15.dll
-xl2tab_v16.dll
-xl2tab_v17.dll
-xl2tab_v18.dll
-xl2tab_v19.dll
-xl2tab_v20.dll
-xl2tab_v21.dll
-xl2tab_v22.dll
+# промежуточные сборки (актуальная - xl2tab.dll)
+xl2tab_v*.dll
 
 # исторические LISP-наброски (нерабочие, справочно)
 legacy-lsp/

@@ -19,6 +19,11 @@ using Autodesk.AutoCAD.Windows;
 
 [assembly: CommandClass(typeof(Xl2Tab.Plugin))]
 [assembly: ExtensionApplication(typeof(Xl2Tab.Plugin))]
+[assembly: System.Reflection.AssemblyTitle("XL2TAB")]
+[assembly: System.Reflection.AssemblyProduct("XL2TAB")]
+[assembly: System.Reflection.AssemblyCopyright("VissMUT")]
+[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.0.0")]
 
 namespace Xl2Tab
 {
@@ -1224,9 +1229,8 @@ namespace Xl2Tab
             catch (System.Exception ex) { Log("Тулбар-кнопка: " + ex.Message); }
         }
 
-        // создаёт (или обновляет) классическую панель XL2TAB через COM-API AutoCAD.
-        // ВАЖНО: коллекции COM (MenuGroups, Toolbars) не находят член "Item" по имени -
-        // используется dynamic, который, как и PowerShell, обращается к default-члену (DISPID 0).
+        // создаёт панель XL2TAB: основной путь - частичное меню XL2TAB.cuix
+        // (стандартные иконки 32bpp с прозрачностью, подсказки), запасной - через COM-API.
         static void EnsureClassicToolbar(string where)
         {
             try
@@ -1251,8 +1255,54 @@ namespace Xl2Tab
                     }
                 }
                 if (app == null) { Log("Тулбар (" + where + "): COM Application = null"); return; }
-                Log("Тулбар (" + where + "): app через " + src);
 
+                dynamic groups = app.MenuGroups;
+                dynamic existing = null;
+                try { existing = groups["XL2TAB"]; } catch { }
+                if (existing != null)
+                {
+                    _toolbarReady = true;
+                    return;
+                }
+
+                // основной путь: частичное меню XL2TAB.cuix
+                string cuix = Path.Combine(Path.GetDirectoryName(typeof(Plugin).Assembly.Location), "XL2TAB.cuix");
+                if (File.Exists(cuix))
+                {
+                    try
+                    {
+                        dynamic mg = groups.Load(cuix);
+                        Log("Меню XL2TAB загружено (" + where + "): " + cuix);
+                        _toolbarReady = true;
+                        return;
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Log("Меню XL2TAB (" + where + "): " + ex.Message +
+                            (ex.InnerException != null ? " / " + ex.InnerException.Message : "") +
+                            " - создаю панель через COM");
+                    }
+                }
+                else
+                {
+                    Log("XL2TAB.cuix не найден рядом с DLL (" + cuix + ") - создаю панель через COM");
+                }
+
+                EnsureClassicToolbarDyn(where, app);
+            }
+            catch (System.Exception ex)
+            {
+                string m = ex.Message;
+                if (ex.InnerException != null) m += " / " + ex.InnerException.Message;
+                Log("Тулбар (" + where + "): " + m);
+            }
+        }
+
+        // запасной путь: панель через COM-API (иконки-плитки)
+        static void EnsureClassicToolbarDyn(string where, dynamic app)
+        {
+            try
+            {
                 dynamic groups = app.MenuGroups;
                 dynamic group = groups[0];
                 dynamic toolbars = group.Toolbars;
@@ -1272,7 +1322,7 @@ namespace Xl2Tab
                         "Диагностика DataLink-связей\nЛог: %TEMP%\\xltabdiag_log.txt\nКоманда: XLTABDIAG2",
                         "^C^C_XLTABDIAG2 ", 2);
                     try { tb.Dock(1); } catch { } // 1 = сверху
-                    Log("Тулбар XL2TAB создан (" + where + ")");
+                    Log("Тулбар XL2TAB создан через COM (" + where + ")");
                 }
                 tb.Visible = true;
                 _toolbarReady = true;
@@ -1281,7 +1331,7 @@ namespace Xl2Tab
             {
                 string m = ex.Message;
                 if (ex.InnerException != null) m += " / " + ex.InnerException.Message;
-                Log("Тулбар (" + where + "): " + m);
+                Log("Тулбар COM (" + where + "): " + m);
             }
         }
 

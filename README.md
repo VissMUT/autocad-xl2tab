@@ -34,13 +34,13 @@
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Скрипт копирует бандл в `%APPDATA%\Autodesk\ApplicationPlugins\XL2TAB.bundle\`
+Скрипт копирует бандл (xl2tab.dll + XL2TAB.cuix) в `%APPDATA%\Autodesk\ApplicationPlugins\XL2TAB.bundle\`
 (права администратора не нужны). После перезапуска AutoCAD команды доступны
 **всегда, без NETLOAD**.
 
 ### Вариант 2: ручная загрузка
 
-`NETLOAD` - выбрать `xl2tab_v23.dll` (загружено до перезапуска AutoCAD).
+`NETLOAD` - выбрать `xl2tab.dll` (загружено до перезапуска AutoCAD).
 Или `APPLOAD` - «Содержимое» - добавить DLL в Startup Suite.
 
 ### Обновление версии
@@ -141,7 +141,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 ```powershell
 & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:library `
-  /out:"xl2tab_v23.dll" `
+  /out:"xl2tab.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\AcCoreMgd.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\acdbmgd.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\acmgd.dll" `
