@@ -1180,6 +1180,31 @@ namespace Xl2Tab
             return path;
         }
 
+        // маска прозрачности: чёрный = прозрачно, белый = непрозрачно
+        static string EnsureMask(string srcPath, string maskPath)
+        {
+            try
+            {
+                using (Bitmap src = new Bitmap(srcPath))
+                using (Bitmap mask = new Bitmap(src.Width, src.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb))
+                {
+                    System.Drawing.Color mag = System.Drawing.Color.Magenta;
+                    for (int y = 0; y < src.Height; y++)
+                    {
+                        for (int x = 0; x < src.Width; x++)
+                        {
+                            System.Drawing.Color px = src.GetPixel(x, y);
+                            bool transparent = (px.R == mag.R && px.G == mag.G && px.B == mag.B);
+                            mask.SetPixel(x, y, transparent ? System.Drawing.Color.Black : System.Drawing.Color.White);
+                        }
+                    }
+                    mask.Save(maskPath, System.Drawing.Imaging.ImageFormat.Bmp);
+                }
+            }
+            catch { }
+            return maskPath;
+        }
+
         static void AddTbButton(object tb, int idx, string name, string help, string macro, int kind)
         {
             try
@@ -1187,9 +1212,9 @@ namespace Xl2Tab
                 object btn = Call(tb, "AddToolbarButton", new object[] { idx, name, help, macro, false });
                 try
                 {
-                    string b16 = EnsureIcon("xl2tab_tb" + (idx + 1) + "_16.bmp", 16, kind);
-                    string b32 = EnsureIcon("xl2tab_tb" + (idx + 1) + "_32.bmp", 32, kind);
-                    Call(btn, "SetBitmaps", new object[] { b16, b32 });
+                    string bmp16 = EnsureIcon("xl2tab_tb" + (idx + 1) + "_16.bmp", 16, kind);
+                    string mask = EnsureMask(bmp16, Path.Combine(Path.GetTempPath(), "xl2tab_tb" + (idx + 1) + "_mask.bmp"));
+                    Call(btn, "SetBitmaps", new object[] { bmp16, mask });
                 }
                 catch (System.Exception ex) { Log("Тулбар-иконка: " + ex.Message); }
             }
