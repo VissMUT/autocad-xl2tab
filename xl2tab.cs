@@ -1119,7 +1119,8 @@ namespace Xl2Tab
         }
 
         // ── классическая панель инструментов (для workspace без ленты) ──
-        static string EnsureIcon(int size, string text, string fileName)
+        // kind: 0 - таблица, 1 - шаги, 2 - лупа
+        static string EnsureIcon(string fileName, int size, int kind)
         {
             string path = Path.Combine(Path.GetTempPath(), fileName);
             try
@@ -1131,10 +1132,45 @@ namespace Xl2Tab
                         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                         // маджента - прозрачный цвет в классических панелях AutoCAD
                         g.Clear(System.Drawing.Color.Magenta);
-                        using (System.Drawing.Font f = new System.Drawing.Font("Segoe UI", size * 0.40f, FontStyle.Bold, GraphicsUnit.Pixel))
-                        using (SolidBrush br = new SolidBrush(System.Drawing.Color.FromArgb(30, 90, 160)))
-                        using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-                            g.DrawString(text, f, br, new RectangleF(0, 0, size, size), sf);
+                        float k = size / 32f; // масштаб от макета 32px
+                        if (kind == 0)
+                        {
+                            // таблица: рамка, синяя шапка, сетка
+                            RectangleF body = new RectangleF(3 * k, 6 * k, 26 * k, 20 * k);
+                            using (SolidBrush w = new SolidBrush(System.Drawing.Color.FromArgb(245, 245, 245)))
+                                g.FillRectangle(w, body);
+                            using (SolidBrush hdr = new SolidBrush(System.Drawing.Color.FromArgb(40, 110, 180)))
+                                g.FillRectangle(hdr, new RectangleF(3 * k, 6 * k, 26 * k, 6.5f * k));
+                            using (Pen p = new Pen(System.Drawing.Color.FromArgb(60, 60, 60), Math.Max(1f, 1.2f * k)))
+                            {
+                                g.DrawRectangle(p, body.X, body.Y, body.Width, body.Height);
+                                g.DrawLine(p, 3 * k, 19 * k, 29 * k, 19 * k);
+                                g.DrawLine(p, 12 * k, 6 * k, 12 * k, 26 * k);
+                                g.DrawLine(p, 20 * k, 6 * k, 20 * k, 26 * k);
+                            }
+                        }
+                        else if (kind == 1)
+                        {
+                            // шаги: три строки с маркерами
+                            using (SolidBrush b = new SolidBrush(System.Drawing.Color.FromArgb(40, 110, 180)))
+                            using (Pen p = new Pen(System.Drawing.Color.FromArgb(220, 220, 220), Math.Max(1f, 2f * k)))
+                            {
+                                float[] ys = { 8f, 16f, 24f };
+                                foreach (float y in ys)
+                                {
+                                    g.FillRectangle(b, 4 * k, (y - 2.5f) * k, 5 * k, 5 * k);
+                                    g.DrawLine(p, 12 * k, y * k, 28 * k, y * k);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // лупа
+                            using (Pen p = new Pen(System.Drawing.Color.FromArgb(220, 220, 220), Math.Max(1.5f, 2.5f * k)))
+                                g.DrawEllipse(p, 5 * k, 5 * k, 15 * k, 15 * k);
+                            using (Pen h = new Pen(System.Drawing.Color.FromArgb(40, 110, 180), Math.Max(1.5f, 3f * k)))
+                                g.DrawLine(h, 18 * k, 18 * k, 27 * k, 27 * k);
+                        }
                     }
                     bmp.Save(path, System.Drawing.Imaging.ImageFormat.Bmp);
                 }
@@ -1143,16 +1179,16 @@ namespace Xl2Tab
             return path;
         }
 
-        static void AddTbButton(object tb, int idx, string name, string help, string macro)
+        static void AddTbButton(object tb, int idx, string name, string help, string macro, int kind)
         {
             try
             {
                 object btn = Call(tb, "AddToolbarButton", new object[] { idx, name, help, macro, false });
                 try
                 {
-                    string bmp16 = EnsureIcon(16, "X2T", "xl2tab16.bmp");
-                    string bmp32 = EnsureIcon(32, "X2T", "xl2tab32.bmp");
-                    Call(btn, "SetBitmaps", new object[] { bmp16, bmp32 });
+                    string b16 = EnsureIcon("xl2tab_tb" + (idx + 1) + "_16.bmp", 16, kind);
+                    string b32 = EnsureIcon("xl2tab_tb" + (idx + 1) + "_32.bmp", 32, kind);
+                    Call(btn, "SetBitmaps", new object[] { b16, b32 });
                 }
                 catch (System.Exception ex) { Log("Тулбар-иконка: " + ex.Message); }
             }
@@ -1174,9 +1210,15 @@ namespace Xl2Tab
                 if (tb == null)
                 {
                     tb = Call(toolbars, "Add", new object[] { "XL2TAB" });
-                    AddTbButton(tb, 0, "XL2TAB", "Excel в таблицы (палитра)", "^C^C_XL2TAB ");
-                    AddTbButton(tb, 1, "Пошагово", "Пошаговый режим", "^C^C_XL2TABPROMPT ");
-                    AddTbButton(tb, 2, "Диагностика", "XLTABDIAG2", "^C^C_XLTABDIAG2 ");
+                    AddTbButton(tb, 0, "XL2TAB",
+                        "Excel в связанные таблицы AutoCAD (DataLink)\nОткрыть палитру настроек\nКоманда: XL2TAB",
+                        "^C^C_XL2TAB ", 0);
+                    AddTbButton(tb, 1, "Пошагово",
+                        "Пошаговый режим без палитры (в командной строке)\nКоманда: XL2TABPROMPT",
+                        "^C^C_XL2TABPROMPT ", 1);
+                    AddTbButton(tb, 2, "Диагностика",
+                        "Диагностика DataLink-связей\nЛог: %TEMP%\\xltabdiag_log.txt\nКоманда: XLTABDIAG2",
+                        "^C^C_XLTABDIAG2 ", 2);
                     try { Call(tb, "Dock", new object[] { 1 }); } catch { } // 1 = сверху
                     Log("Тулбар XL2TAB создан (" + where + ")");
                 }
