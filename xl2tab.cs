@@ -1140,58 +1140,50 @@ namespace Xl2Tab
         }
 
         // ── классическая панель инструментов (для workspace без ленты) ──
+        // Иконки - непрозрачная синяя плитка 16x16 с белым глифом:
+        // SetBitmaps не поддерживает прозрачность, поэтому фон - часть рисунка.
         // kind: 0 - таблица, 1 - шаги, 2 - лупа
-        static string EnsureIcon(string fileName, int size, int kind)
+        static string EnsureIcon(string fileName, int kind)
         {
             string path = Path.Combine(Path.GetTempPath(), fileName);
             try
             {
-                // 24bpp без альфы: AutoCAD считает прозрачным цвет фона (маджента)
-                using (Bitmap bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format24bppRgb))
+                using (Bitmap bmp = new Bitmap(16, 16, System.Drawing.Imaging.PixelFormat.Format24bppRgb))
                 {
                     using (Graphics g = Graphics.FromImage(bmp))
                     {
                         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
-                        // маджента - прозрачный цвет в классических панелях AutoCAD
-                        g.Clear(System.Drawing.Color.Magenta);
-                        float k = size / 32f; // масштаб от макета 32px
-                        if (kind == 0)
+                        using (SolidBrush tile = new SolidBrush(System.Drawing.Color.FromArgb(38, 100, 170)))
+                            g.FillRectangle(tile, 0, 0, 16, 16);
+                        using (SolidBrush hi = new SolidBrush(System.Drawing.Color.FromArgb(62, 132, 202)))
+                            g.FillRectangle(hi, 0, 0, 16, 2);
+                        using (Pen w = new Pen(System.Drawing.Color.White, 1))
+                        using (SolidBrush wb = new SolidBrush(System.Drawing.Color.White))
                         {
-                            // таблица: рамка, синяя шапка, сетка
-                            RectangleF body = new RectangleF(3 * k, 6 * k, 26 * k, 20 * k);
-                            using (SolidBrush w = new SolidBrush(System.Drawing.Color.FromArgb(245, 245, 245)))
-                                g.FillRectangle(w, body);
-                            using (SolidBrush hdr = new SolidBrush(System.Drawing.Color.FromArgb(40, 110, 180)))
-                                g.FillRectangle(hdr, new RectangleF(3 * k, 6 * k, 26 * k, 6.5f * k));
-                            using (Pen p = new Pen(System.Drawing.Color.FromArgb(60, 60, 60), Math.Max(1f, 1.2f * k)))
+                            if (kind == 0)
                             {
-                                g.DrawRectangle(p, body.X, body.Y, body.Width, body.Height);
-                                g.DrawLine(p, 3 * k, 19 * k, 29 * k, 19 * k);
-                                g.DrawLine(p, 12 * k, 6 * k, 12 * k, 26 * k);
-                                g.DrawLine(p, 20 * k, 6 * k, 20 * k, 26 * k);
+                                // таблица
+                                g.DrawRectangle(w, 2, 4, 11, 8);
+                                g.DrawLine(w, 2, 7, 13, 7);
+                                g.DrawLine(w, 6, 4, 6, 12);
+                                g.DrawLine(w, 9, 4, 9, 12);
                             }
-                        }
-                        else if (kind == 1)
-                        {
-                            // шаги: три строки с маркерами
-                            using (SolidBrush b = new SolidBrush(System.Drawing.Color.FromArgb(40, 110, 180)))
-                            using (Pen p = new Pen(System.Drawing.Color.FromArgb(220, 220, 220), Math.Max(1f, 2f * k)))
+                            else if (kind == 1)
                             {
-                                float[] ys = { 8f, 16f, 24f };
-                                foreach (float y in ys)
+                                // шаги
+                                for (int i = 0; i < 3; i++)
                                 {
-                                    g.FillRectangle(b, 4 * k, (y - 2.5f) * k, 5 * k, 5 * k);
-                                    g.DrawLine(p, 12 * k, y * k, 28 * k, y * k);
+                                    int y = 4 + i * 4;
+                                    g.FillRectangle(wb, 2, y - 1, 3, 2);
+                                    g.DrawLine(w, 6, y, 13, y);
                                 }
                             }
-                        }
-                        else
-                        {
-                            // лупа
-                            using (Pen p = new Pen(System.Drawing.Color.FromArgb(220, 220, 220), Math.Max(1.5f, 2.5f * k)))
-                                g.DrawEllipse(p, 5 * k, 5 * k, 15 * k, 15 * k);
-                            using (Pen h = new Pen(System.Drawing.Color.FromArgb(40, 110, 180), Math.Max(1.5f, 3f * k)))
-                                g.DrawLine(h, 18 * k, 18 * k, 27 * k, 27 * k);
+                            else
+                            {
+                                // лупа
+                                g.DrawEllipse(w, 2, 2, 8, 8);
+                                g.DrawLine(w, 10, 10, 13, 13);
+                            }
                         }
                     }
                     bmp.Save(path, System.Drawing.Imaging.ImageFormat.Bmp);
@@ -1201,31 +1193,6 @@ namespace Xl2Tab
             return path;
         }
 
-        // маска прозрачности (Windows AND-маска): белый = прозрачно, чёрный = непрозрачно
-        static string EnsureMask(string srcPath, string maskPath)
-        {
-            try
-            {
-                using (Bitmap src = new Bitmap(srcPath))
-                using (Bitmap mask = new Bitmap(src.Width, src.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb))
-                {
-                    System.Drawing.Color mag = System.Drawing.Color.Magenta;
-                    for (int y = 0; y < src.Height; y++)
-                    {
-                        for (int x = 0; x < src.Width; x++)
-                        {
-                            System.Drawing.Color px = src.GetPixel(x, y);
-                            bool transparent = (px.R == mag.R && px.G == mag.G && px.B == mag.B);
-                            mask.SetPixel(x, y, transparent ? System.Drawing.Color.White : System.Drawing.Color.Black);
-                        }
-                    }
-                    mask.Save(maskPath, System.Drawing.Imaging.ImageFormat.Bmp);
-                }
-            }
-            catch { }
-            return maskPath;
-        }
-
         static void AddTbButton(object tb, int idx, string name, string help, string macro, int kind)
         {
             try
@@ -1233,9 +1200,8 @@ namespace Xl2Tab
                 object btn = Call(tb, "AddToolbarButton", new object[] { idx, name, help, macro, false });
                 try
                 {
-                    string bmp16 = EnsureIcon("xl2tab_tb" + (idx + 1) + "_16.bmp", 16, kind);
-                    string mask = EnsureMask(bmp16, Path.Combine(Path.GetTempPath(), "xl2tab_tb" + (idx + 1) + "_mask.bmp"));
-                    Call(btn, "SetBitmaps", new object[] { bmp16, mask });
+                    string bmp = EnsureIcon("xl2tab_tb" + (idx + 1) + ".bmp", kind);
+                    Call(btn, "SetBitmaps", new object[] { bmp, bmp });
                 }
                 catch (System.Exception ex) { Log("Тулбар-иконка: " + ex.Message); }
             }
