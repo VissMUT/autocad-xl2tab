@@ -1180,7 +1180,7 @@ namespace Xl2Tab
             return path;
         }
 
-        // маска прозрачности: чёрный = прозрачно, белый = непрозрачно
+        // маска прозрачности (Windows AND-маска): белый = прозрачно, чёрный = непрозрачно
         static string EnsureMask(string srcPath, string maskPath)
         {
             try
@@ -1195,7 +1195,7 @@ namespace Xl2Tab
                         {
                             System.Drawing.Color px = src.GetPixel(x, y);
                             bool transparent = (px.R == mag.R && px.G == mag.G && px.B == mag.B);
-                            mask.SetPixel(x, y, transparent ? System.Drawing.Color.Black : System.Drawing.Color.White);
+                            mask.SetPixel(x, y, transparent ? System.Drawing.Color.White : System.Drawing.Color.Black);
                         }
                     }
                     mask.Save(maskPath, System.Drawing.Imaging.ImageFormat.Bmp);
