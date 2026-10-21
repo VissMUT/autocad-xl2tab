@@ -1465,45 +1465,181 @@ namespace Xl2Tab
 
             public Xl2TabControl()
             {
-                Width = 330;
-                Height = 560;
+                Width = 340;
+                Height = 640;
                 Font = new System.Drawing.Font("Segoe UI", 9f);
+                AutoScaleMode = AutoScaleMode.Font;
 
-                _btnFile = new Button { Text = "Выбрать файл...", Left = 8, Top = 8, Width = 128, Height = 26 };
-                _lblFile = new Label { Text = "файл не выбран", Left = 144, Top = 13, Width = 172, AutoEllipsis = true };
-                Label lblSheets = new Label { Text = "Листы:", Left = 8, Top = 42, Width = 60 };
-                _clb = new CheckedListBox { Left = 8, Top = 60, Width = 306, Height = 176, CheckOnClick = true };
-                _btnAll = new Button { Text = "Все", Left = 8, Top = 242, Width = 70, Height = 24 };
-                _btnNone = new Button { Text = "Ничего", Left = 84, Top = 242, Width = 70, Height = 24 };
-                Label lblRange = new Label { Text = "Диапазон (пусто = весь лист):", Left = 8, Top = 274, Width = 250 };
-                _txtRange = new TextBox { Left = 8, Top = 292, Width = 306 };
-                Label lblScale = new Label { Text = "Масштаб размеров:", Left = 8, Top = 324, Width = 160 };
+                TableLayoutPanel root = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    ColumnCount = 1,
+                    Padding = new Padding(12, 10, 12, 8)
+                };
+                root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+                root.RowCount = 11;
+
+                // 0: файл
+                TableLayoutPanel fileRow = new TableLayoutPanel
+                {
+                    ColumnCount = 2,
+                    AutoSize = true,
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(0, 0, 0, 8)
+                };
+                fileRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
+                fileRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+                _btnFile = new Button { Text = "Выбрать файл...", Dock = DockStyle.Fill, Height = 28, Margin = new Padding(0) };
+                _lblFile = new Label
+                {
+                    Text = "файл не выбран",
+                    Dock = DockStyle.Fill,
+                    AutoEllipsis = true,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Margin = new Padding(8, 0, 0, 0)
+                };
+                fileRow.Controls.Add(_btnFile, 0, 0);
+                fileRow.Controls.Add(_lblFile, 1, 0);
+
+                // 1: заголовок списка
+                Label lblSheets = new Label { Text = "Листы:", AutoSize = true, Margin = new Padding(0, 0, 0, 4) };
+
+                // 2: список листов (растягивается по высоте)
+                _clb = new CheckedListBox
+                {
+                    Dock = DockStyle.Fill,
+                    CheckOnClick = true,
+                    IntegralHeight = false,
+                    Margin = new Padding(0, 0, 0, 6)
+                };
+
+                // 3: все / ничего
+                FlowLayoutPanel allRow = new FlowLayoutPanel
+                {
+                    AutoSize = true,
+                    Dock = DockStyle.Fill,
+                    WrapContents = false,
+                    Margin = new Padding(0, 0, 0, 8)
+                };
+                _btnAll = new Button { Text = "Все", Width = 72, Height = 24, Margin = new Padding(0, 0, 6, 0) };
+                _btnNone = new Button { Text = "Ничего", Width = 72, Height = 24, Margin = new Padding(0) };
+                allRow.Controls.Add(_btnAll);
+                allRow.Controls.Add(_btnNone);
+
+                // 4: диапазон
+                TableLayoutPanel rangePanel = new TableLayoutPanel
+                {
+                    ColumnCount = 1,
+                    AutoSize = true,
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(0, 0, 0, 8)
+                };
+                rangePanel.Controls.Add(new Label { Text = "Диапазон (пусто = весь лист):", AutoSize = true, Margin = new Padding(0) });
+                _txtRange = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 3, 0, 0) };
+                rangePanel.Controls.Add(_txtRange);
+
+                // 5: масштаб
+                TableLayoutPanel scaleRow = new TableLayoutPanel
+                {
+                    ColumnCount = 2,
+                    AutoSize = true,
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(0, 0, 0, 8)
+                };
+                scaleRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+                scaleRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+                scaleRow.Controls.Add(new Label { Text = "Масштаб размеров:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0) }, 0, 0);
                 _nudScale = new NumericUpDown
                 {
-                    Left = 8, Top = 342, Width = 70, DecimalPlaces = 2,
-                    Minimum = 0.01M, Maximum = 100M, Value = 1M, Increment = 0.1M
+                    Dock = DockStyle.Fill, DecimalPlaces = 2,
+                    Minimum = 0.01M, Maximum = 100M, Value = 1M, Increment = 0.1M,
+                    Margin = new Padding(0)
                 };
-                _chkSplit = new CheckBox { Text = "Разбивать по высоте (под А3)", Left = 8, Top = 378, Width = 270, Height = 22 };
-                Label lblH1 = new Label { Text = "Высота, мм (1-й лист):", Left = 8, Top = 404, Width = 150 };
+                scaleRow.Controls.Add(_nudScale, 1, 0);
+
+                // 6: разбивка
+                _chkSplit = new CheckBox
+                {
+                    Text = "Разбивать по высоте (под А3)",
+                    AutoSize = true,
+                    Margin = new Padding(0, 2, 0, 6)
+                };
+
+                // 7: высота 1-го листа
+                TableLayoutPanel h1Row = new TableLayoutPanel
+                {
+                    ColumnCount = 2,
+                    AutoSize = true,
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(0, 0, 0, 4)
+                };
+                h1Row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+                h1Row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+                h1Row.Controls.Add(new Label { Text = "Высота 1-го листа, мм:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0) }, 0, 0);
                 _nudH1 = new NumericUpDown
                 {
-                    Left = 8, Top = 422, Width = 78, DecimalPlaces = 1,
-                    Minimum = 10M, Maximum = 3000M, Value = 232M, Enabled = false
+                    Dock = DockStyle.Fill, DecimalPlaces = 1, Minimum = 10M, Maximum = 3000M,
+                    Value = 232M, Enabled = false, Margin = new Padding(0)
                 };
-                Label lblH2 = new Label { Text = "последующие:", Left = 96, Top = 404, Width = 120 };
+                h1Row.Controls.Add(_nudH1, 1, 0);
+
+                // 8: высота последующих листов
+                TableLayoutPanel h2Row = new TableLayoutPanel
+                {
+                    ColumnCount = 2,
+                    AutoSize = true,
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(0, 0, 0, 8)
+                };
+                h2Row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+                h2Row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+                h2Row.Controls.Add(new Label { Text = "Высота последующих, мм:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0) }, 0, 0);
                 _nudH2 = new NumericUpDown
                 {
-                    Left = 96, Top = 422, Width = 78, DecimalPlaces = 1,
-                    Minimum = 10M, Maximum = 3000M, Value = 247M, Enabled = false
+                    Dock = DockStyle.Fill, DecimalPlaces = 1, Minimum = 10M, Maximum = 3000M,
+                    Value = 247M, Enabled = false, Margin = new Padding(0)
                 };
-                _btnCreate = new Button { Text = "Создать таблицы", Left = 8, Top = 460, Width = 160, Height = 34 };
-                _lblStatus = new Label { Text = "", Left = 8, Top = 502, Width = 306, Height = 48 };
+                h2Row.Controls.Add(_nudH2, 1, 0);
 
-                Controls.AddRange(new Control[] {
-                    _btnFile, _lblFile, lblSheets, _clb, _btnAll, _btnNone,
-                    lblRange, _txtRange, lblScale, _nudScale, _chkSplit,
-                    lblH1, _nudH1, lblH2, _nudH2, _btnCreate, _lblStatus
-                });
+                // 9: кнопка
+                _btnCreate = new Button { Text = "Создать таблицы", Dock = DockStyle.Fill, Height = 36, Margin = new Padding(0, 0, 0, 6) };
+
+                // 10: статус
+                _lblStatus = new Label
+                {
+                    Text = "",
+                    Dock = DockStyle.Fill,
+                    AutoSize = false,
+                    Height = 44,
+                    ForeColor = System.Drawing.Color.FromArgb(90, 90, 90),
+                    Margin = new Padding(0)
+                };
+
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 0 файл
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 1 заголовок
+                root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));// 2 список
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 3 все/ничего
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 4 диапазон
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 5 масштаб
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 6 разбивка
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 7 высота 1
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 8 высота 2
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 9 кнопка
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));    // 10 статус
+
+                root.Controls.Add(fileRow, 0, 0);
+                root.Controls.Add(lblSheets, 0, 1);
+                root.Controls.Add(_clb, 0, 2);
+                root.Controls.Add(allRow, 0, 3);
+                root.Controls.Add(rangePanel, 0, 4);
+                root.Controls.Add(scaleRow, 0, 5);
+                root.Controls.Add(_chkSplit, 0, 6);
+                root.Controls.Add(h1Row, 0, 7);
+                root.Controls.Add(h2Row, 0, 8);
+                root.Controls.Add(_btnCreate, 0, 9);
+                root.Controls.Add(_lblStatus, 0, 10);
+
+                Controls.Add(root);
 
                 _btnFile.Click += (s, e) => PickFile();
                 _btnAll.Click += (s, e) => CheckAll(true);
