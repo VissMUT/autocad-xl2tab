@@ -9,6 +9,8 @@
     <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R23.0" />
     <ComponentEntry AppName="XL2TAB" Version="1.0.0.0"
                     ModuleName="./Contents/xl2tab.dll"
+                    LoadOnAutoCADStartup="True"
+                    LoadOnCommandInvocation="True"
                     AppDescription="XL2TAB - Excel в связанные таблицы AutoCAD (DataLink)">
       <Commands GroupName="XL2TAB">
         <Command Global="XL2TAB" />
