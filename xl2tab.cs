@@ -18,12 +18,27 @@ using Autodesk.AutoCAD.Runtime;
 using Autodesk.AutoCAD.Windows;
 
 [assembly: CommandClass(typeof(Xl2Tab.Plugin))]
+[assembly: ExtensionApplication(typeof(Xl2Tab.Plugin))]
 
 namespace Xl2Tab
 {
-    public class Plugin
+    public class Plugin : IExtensionApplication
     {
         static object Miss { get { return Type.Missing; } }
+
+        public void Initialize()
+        {
+            try
+            {
+                if (Autodesk.Windows.ComponentManager.Ribbon == null)
+                    Autodesk.Windows.ComponentManager.ItemInitialized += OnItemInitialized;
+                else
+                    AddRibbonTab();
+            }
+            catch (System.Exception ex) { Log("Инициализация: " + ex.Message); }
+        }
+
+        public void Terminate() { }
 
         static object NewExcel()
         {
@@ -972,6 +987,123 @@ namespace Xl2Tab
                 if (excelPidsBefore != null) KillNewExcel(excelPidsBefore);
                 GC.Collect();
             }
+        }
+
+        // ── лента: вкладка и кнопки ─────────────────────────────────
+        public class AcadCommandHandler : System.Windows.Input.ICommand
+        {
+            public event EventHandler CanExecuteChanged;
+            public bool CanExecute(object parameter) { return true; }
+            public void Execute(object parameter)
+            {
+                try
+                {
+                    Document doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument;
+                    if (doc != null) doc.SendStringToExecute((string)parameter, true, false, false);
+                }
+                catch { }
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+        static extern bool DeleteObject(IntPtr hObject);
+
+        static System.Windows.Media.ImageSource MakeIcon(int size, string text)
+        {
+            using (Bitmap bmp = new Bitmap(size, size))
+            {
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+                    using (System.Drawing.Font f = new System.Drawing.Font("Segoe UI", size * 0.40f, FontStyle.Bold, GraphicsUnit.Pixel))
+                    using (SolidBrush br = new SolidBrush(System.Drawing.Color.FromArgb(30, 90, 160)))
+                    using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                        g.DrawString(text, f, br, new RectangleF(0, 0, size, size), sf);
+                }
+                IntPtr hbmp = bmp.GetHbitmap();
+                try
+                {
+                    return System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
+                        hbmp, IntPtr.Zero, System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                }
+                finally { DeleteObject(hbmp); }
+            }
+        }
+
+        static void AddRibbonTab()
+        {
+            try
+            {
+                Autodesk.Windows.RibbonControl rc = Autodesk.Windows.ComponentManager.Ribbon;
+                if (rc == null) return;
+                foreach (Autodesk.Windows.RibbonTab t in rc.Tabs)
+                    if (t.Id == "XL2TAB_TAB") return;
+
+                Autodesk.Windows.RibbonTab tab = new Autodesk.Windows.RibbonTab();
+                tab.Title = "XL2TAB";
+                tab.Id = "XL2TAB_TAB";
+
+                Autodesk.Windows.RibbonPanel panel = new Autodesk.Windows.RibbonPanel();
+                Autodesk.Windows.RibbonPanelSource src = new Autodesk.Windows.RibbonPanelSource();
+                src.Title = "Excel в таблицы";
+                panel.Source = src;
+
+                Autodesk.Windows.RibbonButton btn = new Autodesk.Windows.RibbonButton();
+                btn.Id = "XL2TAB_BTN";
+                btn.Text = "XL2TAB\nПалитра";
+                btn.ShowText = true;
+                btn.ShowImage = true;
+                btn.Size = Autodesk.Windows.RibbonItemSize.Large;
+                btn.LargeImage = MakeIcon(32, "X2T");
+                btn.Image = MakeIcon(16, "X2T");
+                btn.CommandParameter = "XL2TAB ";
+                btn.CommandHandler = new AcadCommandHandler();
+                btn.ToolTip = "XL2TAB: Excel в связанные таблицы AutoCAD";
+                src.Items.Add(btn);
+
+                Autodesk.Windows.RibbonButton btn2 = new Autodesk.Windows.RibbonButton();
+                btn2.Id = "XL2TAB_PROMPT_BTN";
+                btn2.Text = "Пошагово";
+                btn2.ShowText = true;
+                btn2.ShowImage = true;
+                btn2.Size = Autodesk.Windows.RibbonItemSize.Standard;
+                btn2.Image = MakeIcon(16, ">");
+                btn2.CommandParameter = "XL2TABPROMPT ";
+                btn2.CommandHandler = new AcadCommandHandler();
+                btn2.ToolTip = "XL2TABPROMPT: пошаговый режим";
+                src.Items.Add(btn2);
+
+                Autodesk.Windows.RibbonButton btn3 = new Autodesk.Windows.RibbonButton();
+                btn3.Id = "XL2TAB_DIAG_BTN";
+                btn3.Text = "Диагностика";
+                btn3.ShowText = true;
+                btn3.ShowImage = true;
+                btn3.Size = Autodesk.Windows.RibbonItemSize.Standard;
+                btn3.Image = MakeIcon(16, "?");
+                btn3.CommandParameter = "XLTABDIAG2 ";
+                btn3.CommandHandler = new AcadCommandHandler();
+                btn3.ToolTip = "XLTABDIAG2: диагностика";
+                src.Items.Add(btn3);
+
+                tab.Panels.Add(panel);
+                rc.Tabs.Add(tab);
+            }
+            catch (System.Exception ex) { Log("Лента: " + ex.Message); }
+        }
+
+        static void OnItemInitialized(object sender, Autodesk.Windows.RibbonItemEventArgs e)
+        {
+            try
+            {
+                if (Autodesk.Windows.ComponentManager.Ribbon != null)
+                {
+                    Autodesk.Windows.ComponentManager.ItemInitialized -= OnItemInitialized;
+                    AddRibbonTab();
+                }
+            }
+            catch { }
         }
 
         // ── палитра ─────────────────────────────────────────────────

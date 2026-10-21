@@ -40,7 +40,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 ### Вариант 2: ручная загрузка
 
-`NETLOAD` - выбрать `xl2tab_v11.dll` (загружено до перезапуска AutoCAD).
+`NETLOAD` - выбрать `xl2tab_v12.dll` (загружено до перезапуска AutoCAD).
 Или `APPLOAD` - «Содержимое» - добавить DLL в Startup Suite.
 
 ### Обновление версии
@@ -48,6 +48,14 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 Замените DLL в установленном бандле (при закрытом AutoCAD) и запустите
 `install.ps1` снова, либо просто повторно выполните `install.ps1`
 с новой версией DLL в папке репозитория.
+
+## Кнопка на ленте
+
+После загрузки плагина на ленте AutoCAD появляется вкладка **XL2TAB**:
+
+- большая кнопка **«XL2TAB / Палитра»** - открыть палитру настроек;
+- **«Пошагово»** - пошаговый режим (`XL2TABPROMPT`);
+- **«Диагностика»** - `XLTABDIAG2`.
 
 ## Команды
 
@@ -129,7 +137,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 ```powershell
 & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:library `
-  /out:"xl2tab_v11.dll" `
+  /out:"xl2tab_v12.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\AcCoreMgd.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\acdbmgd.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\acmgd.dll" `
