@@ -26,6 +26,8 @@ namespace Xl2Tab
     {
         static object Miss { get { return Type.Missing; } }
 
+        static bool _toolbarReady;
+
         public void Initialize()
         {
             try
@@ -37,6 +39,11 @@ namespace Xl2Tab
             }
             catch (System.Exception ex) { Log("Инициализация: " + ex.Message); }
             try { Autodesk.AutoCAD.ApplicationServices.Application.Idle += OnIdle; } catch { }
+            try
+            {
+                Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.DocumentActivated += OnDocActivated;
+            }
+            catch { }
             EnsureClassicToolbar("старт");
         }
 
@@ -48,6 +55,20 @@ namespace Xl2Tab
             }
             catch { }
             EnsureClassicToolbar("idle");
+        }
+
+        static void OnDocActivated(object sender, Autodesk.AutoCAD.ApplicationServices.DocumentCollectionEventArgs e)
+        {
+            try
+            {
+                if (_toolbarReady)
+                {
+                    Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.DocumentActivated -= OnDocActivated;
+                    return;
+                }
+                EnsureClassicToolbar("документ");
+            }
+            catch { }
         }
 
         public void Terminate() { }
@@ -1226,6 +1247,11 @@ namespace Xl2Tab
         {
             try
             {
+                if (Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument == null)
+                {
+                    Log("Тулбар (" + where + "): нет открытого документа, создам после его открытия");
+                    return;
+                }
                 object app = Autodesk.AutoCAD.ApplicationServices.Application.AcadApplication;
                 if (app == null) { Log("Тулбар (" + where + "): AcadApplication недоступен"); return; }
                 object groups = GetP(app, "MenuGroups");
@@ -1249,6 +1275,7 @@ namespace Xl2Tab
                     Log("Тулбар XL2TAB создан (" + where + ")");
                 }
                 SetP(tb, "Visible", true);
+                _toolbarReady = true;
             }
             catch (System.Exception ex)
             {
