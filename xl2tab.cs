@@ -1209,6 +1209,24 @@ namespace Xl2Tab
         }
 
         // создаёт (или обновляет) классическую панель XL2TAB через COM-API AutoCAD
+        static void AddTbButtonDyn(dynamic tb, int idx, string name, string help, string macro, int kind)
+        {
+            try
+            {
+                dynamic btn = tb.AddToolbarButton(idx, name, help, macro, false);
+                try
+                {
+                    string bmp = EnsureIcon("xl2tab_tb" + (idx + 1) + ".bmp", kind);
+                    btn.SetBitmaps(bmp, bmp);
+                }
+                catch (System.Exception ex) { Log("Тулбар-иконка: " + ex.Message); }
+            }
+            catch (System.Exception ex) { Log("Тулбар-кнопка: " + ex.Message); }
+        }
+
+        // создаёт (или обновляет) классическую панель XL2TAB через COM-API AutoCAD.
+        // ВАЖНО: коллекции COM (MenuGroups, Toolbars) не находят член "Item" по имени -
+        // используется dynamic, который, как и PowerShell, обращается к default-члену (DISPID 0).
         static void EnsureClassicToolbar(string where)
         {
             try
@@ -1218,29 +1236,45 @@ namespace Xl2Tab
                     Log("Тулбар (" + where + "): нет открытого документа, создам после его открытия");
                     return;
                 }
-                object app = Autodesk.AutoCAD.ApplicationServices.Application.AcadApplication;
-                if (app == null) { Log("Тулбар (" + where + "): AcadApplication недоступен"); return; }
-                object groups = GetP(app, "MenuGroups");
-                object group = GetPI(groups, "Item", new object[] { 0 });
-                object toolbars = GetP(group, "Toolbars");
-                object tb = null;
-                try { tb = GetPI(toolbars, "Item", new object[] { "XL2TAB" }); } catch { }
+
+                dynamic app = null;
+                string src = "ROT.AutoCAD.Application.23";
+                try { app = System.Runtime.InteropServices.Marshal.GetActiveObject("AutoCAD.Application.23"); }
+                catch
+                {
+                    src = "ROT.AutoCAD.Application";
+                    try { app = System.Runtime.InteropServices.Marshal.GetActiveObject("AutoCAD.Application"); }
+                    catch
+                    {
+                        src = "AcadApplication";
+                        app = Autodesk.AutoCAD.ApplicationServices.Application.AcadApplication;
+                    }
+                }
+                if (app == null) { Log("Тулбар (" + where + "): COM Application = null"); return; }
+                Log("Тулбар (" + where + "): app через " + src);
+
+                dynamic groups = app.MenuGroups;
+                dynamic group = groups[0];
+                dynamic toolbars = group.Toolbars;
+
+                dynamic tb = null;
+                try { tb = toolbars["XL2TAB"]; } catch { }
                 if (tb == null)
                 {
-                    tb = Call(toolbars, "Add", new object[] { "XL2TAB" });
-                    AddTbButton(tb, 0, "XL2TAB",
+                    tb = toolbars.Add("XL2TAB");
+                    AddTbButtonDyn(tb, 0, "XL2TAB",
                         "Excel в связанные таблицы AutoCAD (DataLink)\nОткрыть палитру настроек\nКоманда: XL2TAB",
                         "^C^C_XL2TAB ", 0);
-                    AddTbButton(tb, 1, "Пошагово",
+                    AddTbButtonDyn(tb, 1, "Пошагово",
                         "Пошаговый режим без палитры (в командной строке)\nКоманда: XL2TABPROMPT",
                         "^C^C_XL2TABPROMPT ", 1);
-                    AddTbButton(tb, 2, "Диагностика",
+                    AddTbButtonDyn(tb, 2, "Диагностика",
                         "Диагностика DataLink-связей\nЛог: %TEMP%\\xltabdiag_log.txt\nКоманда: XLTABDIAG2",
                         "^C^C_XLTABDIAG2 ", 2);
-                    try { Call(tb, "Dock", new object[] { 1 }); } catch { } // 1 = сверху
+                    try { tb.Dock(1); } catch { } // 1 = сверху
                     Log("Тулбар XL2TAB создан (" + where + ")");
                 }
-                SetP(tb, "Visible", true);
+                tb.Visible = true;
                 _toolbarReady = true;
             }
             catch (System.Exception ex)

@@ -20,6 +20,7 @@ $out = Join-Path $PSScriptRoot "xl2tab.dll"
     /r:"$acadDir\AdWindows.dll" `
     /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.dll `
     /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Xml.dll `
+    /r:"$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\Microsoft.CSharp.dll" `
     /r:"$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\System.Xaml.dll" `
     /r:"$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\WPF\PresentationCore.dll" `
     /r:"$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\WPF\PresentationFramework.dll" `
