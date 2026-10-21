@@ -1125,11 +1125,12 @@ namespace Xl2Tab
             string path = Path.Combine(Path.GetTempPath(), fileName);
             try
             {
-                using (Bitmap bmp = new Bitmap(size, size))
+                // 24bpp без альфы: AutoCAD считает прозрачным цвет фона (маджента)
+                using (Bitmap bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format24bppRgb))
                 {
                     using (Graphics g = Graphics.FromImage(bmp))
                     {
-                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
                         // маджента - прозрачный цвет в классических панелях AutoCAD
                         g.Clear(System.Drawing.Color.Magenta);
                         float k = size / 32f; // масштаб от макета 32px

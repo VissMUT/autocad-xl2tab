@@ -1,4 +1,4 @@
-# старые сборки (актуальная - xl2tab_v16.dll)
+# старые сборки (актуальная - xl2tab_v17.dll)
 xl2tab.dll
 xl2tab_v2.dll
 xl2tab_v3.dll
@@ -14,6 +14,7 @@ xl2tab_v12.dll
 xl2tab_v13.dll
 xl2tab_v14.dll
 xl2tab_v15.dll
+xl2tab_v16.dll
 
 # исторические LISP-наброски (нерабочие, справочно)
 legacy-lsp/
