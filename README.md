@@ -40,7 +40,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 ### Вариант 2: ручная загрузка
 
-`NETLOAD` - выбрать `xl2tab_v14.dll` (загружено до перезапуска AutoCAD).
+`NETLOAD` - выбрать `xl2tab_v15.dll` (загружено до перезапуска AutoCAD).
 Или `APPLOAD` - «Содержимое» - добавить DLL в Startup Suite.
 
 ### Обновление версии
@@ -141,7 +141,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 ```powershell
 & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:library `
-  /out:"xl2tab_v14.dll" `
+  /out:"xl2tab_v15.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\AcCoreMgd.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\acdbmgd.dll" `
   /r:"C:\Program Files\Autodesk\AutoCAD 2019\acmgd.dll" `

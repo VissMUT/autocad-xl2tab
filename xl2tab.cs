@@ -36,7 +36,18 @@ namespace Xl2Tab
                     AddRibbonTab();
             }
             catch (System.Exception ex) { Log("Инициализация: " + ex.Message); }
-            EnsureClassicToolbar();
+            try { Autodesk.AutoCAD.ApplicationServices.Application.Idle += OnIdle; } catch { }
+            EnsureClassicToolbar("старт");
+        }
+
+        static void OnIdle(object sender, EventArgs e)
+        {
+            try
+            {
+                Autodesk.AutoCAD.ApplicationServices.Application.Idle -= OnIdle;
+            }
+            catch { }
+            EnsureClassicToolbar("idle");
         }
 
         public void Terminate() { }
@@ -1149,12 +1160,12 @@ namespace Xl2Tab
         }
 
         // создаёт (или обновляет) классическую панель XL2TAB через COM-API AutoCAD
-        static void EnsureClassicToolbar()
+        static void EnsureClassicToolbar(string where)
         {
             try
             {
                 object app = Autodesk.AutoCAD.ApplicationServices.Application.AcadApplication;
-                if (app == null) { Log("Тулбар: AcadApplication недоступен"); return; }
+                if (app == null) { Log("Тулбар (" + where + "): AcadApplication недоступен"); return; }
                 object groups = GetP(app, "MenuGroups");
                 object group = GetPI(groups, "Item", new object[] { 0 });
                 object toolbars = GetP(group, "Toolbars");
@@ -1167,11 +1178,16 @@ namespace Xl2Tab
                     AddTbButton(tb, 1, "Пошагово", "Пошаговый режим", "^C^C_XL2TABPROMPT ");
                     AddTbButton(tb, 2, "Диагностика", "XLTABDIAG2", "^C^C_XLTABDIAG2 ");
                     try { Call(tb, "Dock", new object[] { 1 }); } catch { } // 1 = сверху
-                    Log("Тулбар XL2TAB создан");
+                    Log("Тулбар XL2TAB создан (" + where + ")");
                 }
                 SetP(tb, "Visible", true);
             }
-            catch (System.Exception ex) { Log("Тулбар: " + ex.Message); }
+            catch (System.Exception ex)
+            {
+                string m = ex.Message;
+                if (ex.InnerException != null) m += " / " + ex.InnerException.Message;
+                Log("Тулбар (" + where + "): " + m);
+            }
         }
 
         // ── палитра ─────────────────────────────────────────────────
@@ -1201,7 +1217,7 @@ namespace Xl2Tab
         [CommandMethod("XL2TAB")]
         public void ShowXl2TabPalette()
         {
-            EnsureClassicToolbar();
+            EnsureClassicToolbar("команда");
             ShowPalette();
         }
 
