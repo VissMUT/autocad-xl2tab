@@ -36,6 +36,7 @@ namespace Xl2Tab
                     AddRibbonTab();
             }
             catch (System.Exception ex) { Log("Инициализация: " + ex.Message); }
+            EnsureClassicToolbar();
         }
 
         public void Terminate() { }
@@ -1106,6 +1107,73 @@ namespace Xl2Tab
             catch { }
         }
 
+        // ── классическая панель инструментов (для workspace без ленты) ──
+        static string EnsureIcon(int size, string text, string fileName)
+        {
+            string path = Path.Combine(Path.GetTempPath(), fileName);
+            try
+            {
+                using (Bitmap bmp = new Bitmap(size, size))
+                {
+                    using (Graphics g = Graphics.FromImage(bmp))
+                    {
+                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                        // маджента - прозрачный цвет в классических панелях AutoCAD
+                        g.Clear(System.Drawing.Color.Magenta);
+                        using (System.Drawing.Font f = new System.Drawing.Font("Segoe UI", size * 0.40f, FontStyle.Bold, GraphicsUnit.Pixel))
+                        using (SolidBrush br = new SolidBrush(System.Drawing.Color.FromArgb(30, 90, 160)))
+                        using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                            g.DrawString(text, f, br, new RectangleF(0, 0, size, size), sf);
+                    }
+                    bmp.Save(path, System.Drawing.Imaging.ImageFormat.Bmp);
+                }
+            }
+            catch { }
+            return path;
+        }
+
+        static void AddTbButton(object tb, int idx, string name, string help, string macro)
+        {
+            try
+            {
+                object btn = Call(tb, "AddToolbarButton", new object[] { idx, 0, name, help, macro, false });
+                try
+                {
+                    string bmp16 = EnsureIcon(16, "X2T", "xl2tab16.bmp");
+                    string bmp32 = EnsureIcon(32, "X2T", "xl2tab32.bmp");
+                    Call(btn, "SetBitmaps", new object[] { bmp16, bmp32 });
+                }
+                catch (System.Exception ex) { Log("Тулбар-иконка: " + ex.Message); }
+            }
+            catch (System.Exception ex) { Log("Тулбар-кнопка: " + ex.Message); }
+        }
+
+        // создаёт (или обновляет) классическую панель XL2TAB через COM-API AutoCAD
+        static void EnsureClassicToolbar()
+        {
+            try
+            {
+                object app = Autodesk.AutoCAD.ApplicationServices.Application.AcadApplication;
+                if (app == null) { Log("Тулбар: AcadApplication недоступен"); return; }
+                object groups = GetP(app, "MenuGroups");
+                object group = GetPI(groups, "Item", new object[] { 0 });
+                object toolbars = GetP(group, "Toolbars");
+                object tb = null;
+                try { tb = GetPI(toolbars, "Item", new object[] { "XL2TAB" }); } catch { }
+                if (tb == null)
+                {
+                    tb = Call(toolbars, "Add", new object[] { "XL2TAB" });
+                    AddTbButton(tb, 0, "XL2TAB", "Excel в таблицы (палитра)", "^C^C_XL2TAB ");
+                    AddTbButton(tb, 1, "Пошагово", "Пошаговый режим", "^C^C_XL2TABPROMPT ");
+                    AddTbButton(tb, 2, "Диагностика", "XLTABDIAG2", "^C^C_XLTABDIAG2 ");
+                    try { Call(tb, "Dock", new object[] { 1 }); } catch { } // 1 = сверху
+                    Log("Тулбар XL2TAB создан");
+                }
+                SetP(tb, "Visible", true);
+            }
+            catch (System.Exception ex) { Log("Тулбар: " + ex.Message); }
+        }
+
         // ── палитра ─────────────────────────────────────────────────
         internal static PaletteSet Palette;
         internal static Xl2TabControl PaletteControl;
@@ -1133,6 +1201,7 @@ namespace Xl2Tab
         [CommandMethod("XL2TAB")]
         public void ShowXl2TabPalette()
         {
+            EnsureClassicToolbar();
             ShowPalette();
         }
 
